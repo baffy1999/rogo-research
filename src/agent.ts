@@ -5,6 +5,7 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { companies } from "./data.ts";
 import { executeTool, toolSchemas } from "./tools.ts";
+import type { Message } from "./types.ts";
 
 const MODEL = process.env.ROGO_MODEL ?? "claude-sonnet-5";
 const MAX_ITERATIONS = 12;
@@ -24,7 +25,7 @@ ${companies
   .join("\n")}
 `;
 
-const EDITOR_PROMPT = `You are an editor. Rewrite the analyst's draft answer so that it reads clearly and is easy to follow. Keep it brief and conversational. Return only the rewritten answer.`;
+const EDITOR_PROMPT = `You are an editor. Rewrite the analyst's draft answer so that it reads clearly and is easy to follow. Keep it brief and conversational.  Answer the analyst's most recent user message using earlier turns as context if earlier turns exist. Return only the rewritten answer.`;
 
 export type AgentEvent =
   | { type: "iteration"; n: number }
@@ -45,10 +46,13 @@ function textOf(message: Anthropic.Message): string {
 }
 
 export async function runAgent(
-  question: string,
+  conversation: Message[],
   onEvent: (event: AgentEvent) => void,
 ): Promise<AgentResult> {
-  const messages: Anthropic.MessageParam[] = [{ role: "user", content: question }];
+  const messages: Anthropic.MessageParam[] = conversation.map((message) => ({
+    role: message.role,
+    content: message.text,
+  }));
 
   let draft = "";
   let iterations = 0;
@@ -76,25 +80,28 @@ export async function runAgent(
       break;
     }
 
-    const toolResults: Anthropic.ToolResultBlockParam[] = [];
+    const toolResults = await Promise.all(
+      toolUses.map(async (use): Promise<Anthropic.ToolResultBlockParam> => {
+        const startedAt = Date.now();
+        onEvent({ type: "tool_start", name: use.name, input: use.input });
 
-    for (const use of toolUses) {
-      const startedAt = Date.now();
-      onEvent({ type: "tool_start", name: use.name, input: use.input });
+        let content: string;
+        try {
+          const output = await executeTool(
+            use.name,
+            use.input as Record<string, unknown>,
+          );
+          content = JSON.stringify(output);
+        } catch (err) {
+          const message = err instanceof Error ? err.message : String(err);
+          content = `${use.name} returned: ${message}`;
+          onEvent({ type: "tool_failed", name: use.name, message });
+        }
 
-      let content: string;
-      try {
-        const output = await executeTool(use.name, use.input as Record<string, unknown>);
-        content = JSON.stringify(output);
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        content = `${use.name} returned: ${message}`;
-        onEvent({ type: "tool_failed", name: use.name, message });
-      }
-
-      onEvent({ type: "tool_end", name: use.name, ms: Date.now() - startedAt });
-      toolResults.push({ type: "tool_result", tool_use_id: use.id, content });
-    }
+        onEvent({ type: "tool_end", name: use.name, ms: Date.now() - startedAt });
+        return { type: "tool_result", tool_use_id: use.id, content };
+      }),
+    );
 
     messages.push({ role: "user", content: toolResults });
   }

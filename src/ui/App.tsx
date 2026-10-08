@@ -1,9 +1,6 @@
 import { useState } from "react";
-
-interface Message {
-  role: "user" | "assistant";
-  text: string;
-}
+import { createConversation } from "../conversation.ts";
+import type { Message } from "../types.ts";
 
 const EXAMPLES = [
   "Compare Acme and Globex and tell me which one appears to be growing faster.",
@@ -20,6 +17,8 @@ export function App() {
   async function send(question: string) {
     if (!question.trim() || busy) return;
 
+    const conversation = createConversation(messages, question);
+
     setMessages((prev) => [...prev, { role: "user", text: question }]);
     setInput("");
     setBusy(true);
@@ -28,7 +27,7 @@ export function App() {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ message: question }),
+        body: JSON.stringify({ conversation }),
       });
       const data = await res.json();
       setMessages((prev) => [
@@ -48,8 +47,18 @@ export function App() {
   return (
     <div className="app">
       <header>
-        <h1>Rogo Research</h1>
-        <p>Ask a question about a company in our coverage universe.</p>
+        <div>
+          <h1>Rogo Research</h1>
+          <p>Ask a question about a company in our coverage universe.</p>
+        </div>
+        <button
+          type="button"
+          className="clear-button"
+          onClick={() => setMessages([])}
+          disabled={busy || messages.length === 0}
+        >
+          New Chat
+        </button>
       </header>
 
       <div className="transcript">

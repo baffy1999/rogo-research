@@ -1,6 +1,7 @@
 import "dotenv/config";
 import express from "express";
 import { runAgent } from "./agent.ts";
+import { parseConversation } from "./conversation.ts";
 
 if (!process.env.ANTHROPIC_API_KEY) {
   console.error(
@@ -13,11 +14,20 @@ const app = express();
 app.use(express.json());
 
 app.post("/api/chat", async (req, res) => {
-  const message = String(req.body.message ?? "");
+  const parsed = parseConversation(req.body);
+
+  if (!parsed.ok) {
+    return res.status(400).json({ error: parsed.error });
+  }
+
+  const { conversation } = parsed;
+  const lastMessage = conversation.at(-1)!;
+  const message = lastMessage.text.trim();
+  const startedAt = Date.now();
   console.log(`\n[chat] ${message}`);
 
   try {
-    const result = await runAgent(message, (event) => {
+    const result = await runAgent(conversation, (event) => {
       switch (event.type) {
         case "iteration":
           console.log(`[agent] iteration ${event.n}`);
@@ -38,6 +48,8 @@ app.post("/api/chat", async (req, res) => {
   } catch (err) {
     console.error(err);
     res.status(500).json({ error: String(err) });
+  } finally {
+    console.log(`[chat] completed in ${Date.now() - startedAt}ms`);
   }
 });
 
