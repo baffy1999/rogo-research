@@ -22,6 +22,13 @@ body {
   gap: 20px;
 }
 
+header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+}
+
 header h1 {
   margin: 0 0 4px;
   font-size: 20px;
@@ -31,6 +38,21 @@ header p {
   margin: 0;
   color: #62707f;
   font-size: 14px;
+}
+
+.clear-button {
+  padding: 8px 12px;
+  border: 1px solid #dde2e8;
+  border-radius: 8px;
+  background: #fff;
+  color: #33414f;
+  font-size: 13px;
+  cursor: pointer;
+}
+
+.clear-button:disabled {
+  opacity: 0.55;
+  cursor: default;
 }
 
 .transcript {
